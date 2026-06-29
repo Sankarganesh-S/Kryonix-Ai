@@ -14,7 +14,6 @@ const MODEL_OPTIONS = [
 ]
 const isMobile = () => window.matchMedia?.('(max-width: 768px)')?.matches ?? (window.innerWidth <= 768)
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`
-
 const newChat = () => ({ id: uid(), dbId: null, title: 'New Chat', messages: [], loaded: true })
 
 export default function ChatPage() {
@@ -171,8 +170,13 @@ export default function ChatPage() {
       if (!current?.dbId) refreshHistory()
     } catch (err) {
       
-      if (err.name === 'AbortError') patch({ content: full.trim() || 'Stopped.', streaming: false, stopped: true })
-      else patch({ content: '⚠️ Something went wrong. Is Ollama running?', streaming: false, error: true })
+      if (err.name === 'AbortError') {
+        patch({ content: full.trim() || 'Stopped.', streaming: false, stopped: true })
+      } else {
+        const msg = err?.message ? String(err.message) : String(err)
+        patch({ content: `⚠️ Something went wrong.\n${msg}`, streaming: false, error: true })
+      }
+
     } finally {
       setLoading(false)
       if (ctrlRef.current === ctrl) ctrlRef.current = null
