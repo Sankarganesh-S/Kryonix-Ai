@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
+
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ChatWindow from '../components/ChatWindow'
@@ -11,7 +12,9 @@ const MODEL_OPTIONS = [
   { label: 'LLaVA 7B — Vision', value: 'llava:7b' },
   { label: 'Mistral 7B — Balanced', value: 'mistral:7b' },
 ]
+const isMobile = () => window.matchMedia?.('(max-width: 768px)')?.matches ?? (window.innerWidth <= 768)
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`
+
 const newChat = () => ({ id: uid(), dbId: null, title: 'New Chat', messages: [], loaded: true })
 
 export default function ChatPage() {
@@ -20,7 +23,8 @@ export default function ChatPage() {
   const [chats, setChats] = useState([newChat()])
   const [activeId, setActiveId] = useState(chats[0].id)
   const [loading, setLoading] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile())
+
   const [model, setModel] = useState(() => localStorage.getItem('kryonix_model') || 'qwen2.5:1.5b')
   const [theme, setTheme] = useState(() => localStorage.getItem('kryonix_theme') || 'dark')
   const ctrlRef = useRef(null)
