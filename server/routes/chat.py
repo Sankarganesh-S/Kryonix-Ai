@@ -97,3 +97,33 @@ async def upload_file(
     except Exception as e:
         db.rollback()
         return {"response": str(e), "error": True}
+
+
+# ── Pin/Unpin chat ────────────────────────────────
+@router.patch("/history/{chat_id}/pin")
+def pin_chat(chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from server.models.chat import Chat
+    chat = db.query(Chat).filter(Chat.id == chat_id, Chat.user_id == u.id).first()
+    if not chat: raise HTTPException(404, "Chat not found")
+    # Toggle pin using title prefix
+    if chat.title and chat.title.startswith("📌 "):
+        chat.title = chat.title[3:]
+    else:
+        chat.title = f"📌 {chat.title or 'Chat'}"
+    db.commit()
+    return {"id": chat.id, "title": chat.title, "pinned": chat.title.startswith("📌 ")}
+
+# ── Export chat ────────────────────────────────────
+@router.get("/history/{chat_id}/export")
+def export_chat(chat_id: int, fmt: str = "txt", u: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from server.repositories.chat_repo import get_chat_with_messages
+    from fastapi.responses import PlainTextResponse
+    chat = get_chat_with_messages(db, chat_id=chat_id, user_id=u.id)
+    if not chat: raise HTTPException(404, "Chat not found")
+    lines = [f"Kryonix AI — Chat Export", f"Title: {chat['title']}", f"Date: {chat['created_at']}", "="*50, ""]
+    for m in chat["messages"]:
+        role = "You" if m["role"] == "user" else "Kryonix AI"
+        lines.append(f"{role}:")
+        lines.append(m["content"])
+        lines.append("")
+    return PlainTextResponse("\n".join(lines), headers={"Content-Disposition": f'attachment; filename="chat-{chat_id}.txt"'})

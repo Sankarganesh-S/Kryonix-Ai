@@ -1,13 +1,40 @@
-import { useState, useRef, useCallback } from 'react'
-import { Send, Square, Paperclip, Globe, X, FileText, Image, File } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Send, Square, Paperclip, Globe, X, FileText, Image, File, Mic, MicOff } from 'lucide-react'
 
 export default function InputArea({ onSend, onStop, onUpload, loading }) {
   const [text, setText] = useState('')
   const [searchEnabled, setSearchEnabled] = useState(false)
   const [selectedFile, setSelectedFile] = useState(null)
   const [dragOver, setDragOver] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [voiceSupported, setVoiceSupported] = useState(false)
   const textRef = useRef(null)
   const fileRef = useRef(null)
+  const recognitionRef = useRef(null)
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (SpeechRecognition) {
+      setVoiceSupported(true)
+      const rec = new SpeechRecognition()
+      rec.continuous = false
+      rec.interimResults = true
+      rec.lang = 'en-US'
+      rec.onresult = (e) => {
+        const transcript = Array.from(e.results).map(r => r[0].transcript).join('')
+        setText(transcript)
+      }
+      rec.onend = () => setListening(false)
+      rec.onerror = () => setListening(false)
+      recognitionRef.current = rec
+    }
+  }, [])
+
+  const toggleVoice = () => {
+    if (!recognitionRef.current) return
+    if (listening) { recognitionRef.current.stop(); setListening(false) }
+    else { recognitionRef.current.start(); setListening(true) }
+  }
 
   const getFileIcon = (file) => {
     if (!file) return <File size={14}/>
@@ -20,16 +47,15 @@ export default function InputArea({ onSend, onStop, onUpload, loading }) {
     if (loading) return
     if (selectedFile) {
       onUpload(text.trim() || 'Analyze this file', selectedFile)
-      setSelectedFile(null)
-      setText('')
-      textRef.current.style.height = 'auto'
+      setSelectedFile(null); setText('')
+      if (textRef.current) textRef.current.style.height = 'auto'
       return
     }
     const t = text.trim()
     if (!t) return
     onSend(t, searchEnabled)
     setText('')
-    textRef.current.style.height = 'auto'
+    if (textRef.current) textRef.current.style.height = 'auto'
   }, [text, loading, onSend, onUpload, selectedFile, searchEnabled])
 
   const keyDown = (e) => {
@@ -43,12 +69,6 @@ export default function InputArea({ onSend, onStop, onUpload, loading }) {
 
   const handleFile = (file) => {
     if (!file) return
-    const allowed = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
-      'text/plain','text/csv','application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-    if (!allowed.includes(file.type) && !file.name.match(/\.(txt|csv|docx|pdf|jpg|jpeg|png|gif|webp)$/i)) {
-      alert('Unsupported file type. Supported: PDF, Word, Images, CSV, TXT')
-      return
-    }
     if (file.size > 20 * 1024 * 1024) { alert('File too large. Max 20MB.'); return }
     setSelectedFile(file)
     if (!text) setText('Analyze this file')
@@ -56,20 +76,11 @@ export default function InputArea({ onSend, onStop, onUpload, loading }) {
 
   const onDrop = (e) => {
     e.preventDefault(); setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) handleFile(file)
+    handleFile(e.dataTransfer.files[0])
   }
 
   return (
     <div className="input-area">
-      {/* Drag overlay */}
-      {dragOver && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(124,110,245,.15)', border: '2px dashed #7c6ef5', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-          <p style={{ color: '#a78bfa', fontWeight: 600 }}>Drop file here</p>
-        </div>
-      )}
-
-      {/* File preview */}
       {selectedFile && (
         <div className="file-preview">
           {getFileIcon(selectedFile)}
@@ -79,13 +90,18 @@ export default function InputArea({ onSend, onStop, onUpload, loading }) {
         </div>
       )}
 
+      {listening && (
+        <div style={{ textAlign: 'center', color: '#ef4444', fontSize: 12, marginBottom: 6, animation: 'blink 1s step-end infinite' }}>
+          🎤 Listening... speak now
+        </div>
+      )}
+
       <div className={`input-box ${dragOver ? 'drag-over' : ''}`}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}>
 
-        {/* File attach button */}
-        <button onClick={() => fileRef.current?.click()} className="input-icon-btn" title="Attach file (PDF, Word, Image, CSV)">
+        <button onClick={() => fileRef.current?.click()} className="input-icon-btn" title="Attach file">
           <Paperclip size={17}/>
         </button>
         <input ref={fileRef} type="file" style={{ display: 'none' }}
@@ -95,27 +111,32 @@ export default function InputArea({ onSend, onStop, onUpload, loading }) {
         <textarea ref={textRef} value={text}
           onChange={e => { setText(e.target.value); resize(e) }}
           onKeyDown={keyDown}
-          placeholder={selectedFile ? "Ask something about this file..." : "Message Kryonix AI…"}
+          placeholder={listening ? 'Listening...' : selectedFile ? 'Ask about this file...' : 'Message Kryonix AI…'}
           className="input-textarea" rows={1} disabled={loading}/>
 
-        <div className="input-actions">
-          {/* Web search toggle */}
+        <div className="input-actions" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {voiceSupported && (
+            <button onClick={toggleVoice} className={`input-icon-btn ${listening ? 'active' : ''}`}
+              title={listening ? 'Stop listening' : 'Voice input'}
+              style={{ color: listening ? '#ef4444' : undefined }}>
+              {listening ? <MicOff size={17}/> : <Mic size={17}/>}
+            </button>
+          )}
           <button onClick={() => setSearchEnabled(p => !p)}
             className={`input-icon-btn ${searchEnabled ? 'active' : ''}`}
             title={searchEnabled ? 'Web search ON' : 'Web search OFF'}>
             <Globe size={17}/>
           </button>
-
           {loading
-            ? <button onClick={onStop} className="input-stop-btn" title="Stop"><Square size={16} fill="currentColor"/></button>
-            : <button onClick={send} disabled={!text.trim() && !selectedFile} className="input-send-btn" title="Send"><Send size={16}/></button>
+            ? <button onClick={onStop} className="input-stop-btn"><Square size={16} fill="currentColor"/></button>
+            : <button onClick={send} disabled={!text.trim() && !selectedFile} className="input-send-btn"><Send size={16}/></button>
           }
         </div>
       </div>
 
       <p className="input-hint">
-        {searchEnabled ? '🌐 Web search ON · ' : ''}
-        Enter to send · Shift+Enter for new line · 📎 Attach PDF, Word, Image, CSV
+        {listening ? '🎤 Speaking...' : searchEnabled ? '🌐 Web search ON · ' : ''}
+        Enter to send · Shift+Enter for newline
       </p>
     </div>
   )

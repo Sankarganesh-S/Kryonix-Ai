@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-
 import { useNavigate } from 'react-router-dom'
 import Sidebar from '../components/Sidebar'
 import ChatWindow from '../components/ChatWindow'
@@ -12,9 +11,9 @@ const MODEL_OPTIONS = [
   { label: 'LLaVA 7B — Vision', value: 'llava:7b' },
   { label: 'Mistral 7B — Balanced', value: 'mistral:7b' },
 ]
-const isMobile = () => window.matchMedia?.('(max-width: 768px)')?.matches ?? (window.innerWidth <= 768)
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`
 const newChat = () => ({ id: uid(), dbId: null, title: 'New Chat', messages: [], loaded: true })
+const isMobile = () => window.innerWidth <= 768
 
 export default function ChatPage() {
   const { token, user } = useAuth()
@@ -23,7 +22,6 @@ export default function ChatPage() {
   const [activeId, setActiveId] = useState(chats[0].id)
   const [loading, setLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile())
-
   const [model, setModel] = useState(() => localStorage.getItem('kryonix_model') || 'qwen2.5:1.5b')
   const [theme, setTheme] = useState(() => localStorage.getItem('kryonix_theme') || 'dark')
   const ctrlRef = useRef(null)
@@ -31,6 +29,11 @@ export default function ChatPage() {
 
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('kryonix_theme', theme) }, [theme])
   useEffect(() => { localStorage.setItem('kryonix_model', model) }, [model])
+  useEffect(() => {
+    const onResize = () => { if (isMobile()) setSidebarOpen(false) }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     if (!token) return
@@ -38,10 +41,7 @@ export default function ChatPage() {
       .then(r => r.json()).then(d => {
         if (!d.chats?.length) return
         const loaded = d.chats.map(c => ({ id: uid(), dbId: c.id, title: c.title || 'Chat', messages: [], loaded: false }))
-        setChats(prev => {
-          const first = prev[0]
-          return first.messages.length === 0 ? [first, ...loaded] : [newChat(), ...loaded]
-        })
+        setChats(prev => prev[0].messages.length === 0 ? [prev[0], ...loaded] : [newChat(), ...loaded])
       }).catch(() => {})
   }, [token])
 
@@ -51,8 +51,7 @@ export default function ChatPage() {
     fetch(`${API}/chat/history/${chat.dbId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => {
         setChats(prev => prev.map(c => c.id !== activeId ? c : {
-          ...c, loaded: true,
-          messages: (d.messages || []).map(m => ({ ...m, id: uid() }))
+          ...c, loaded: true, messages: (d.messages || []).map(m => ({ ...m, id: uid() }))
         }))
       }).catch(() => {})
   }, [activeId])
@@ -73,14 +72,13 @@ export default function ChatPage() {
     })
   }, [activeId, chats, token])
 
-  const addMessages = (userMsg, asstId) => {
-    const asstPlaceholder = { id: asstId, role: 'assistant', content: '', streaming: true }
-    setChats(prev => prev.map(c => {
-      if (c.id !== activeId) return c
-      const title = c.title === 'New Chat' && !c.messages.length ? (userMsg.content || 'File').slice(0, 40) : c.title
-      return { ...c, title, messages: [...c.messages, userMsg, asstPlaceholder] }
-    }))
-  }
+  const pinChat = useCallback(async (id) => {
+    const c = chats.find(x => x.id === id)
+    if (!c?.dbId) return
+    const r = await fetch(`${API}/chat/history/${c.dbId}/pin`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } })
+    const d = await r.json()
+    setChats(prev => prev.map(x => x.id === id ? { ...x, title: d.title } : x))
+  }, [chats, token])
 
   const patchAssistant = (asstId, changes) => {
     setChats(prev => prev.map(c => c.id !== activeId ? c : {
@@ -88,16 +86,23 @@ export default function ChatPage() {
     }))
   }
 
+  const addMessages = (userMsg, asstId) => {
+    const placeholder = { id: asstId, role: 'assistant', content: '', streaming: true }
+    setChats(prev => prev.map(c => {
+      if (c.id !== activeId) return c
+      const title = c.title === 'New Chat' && !c.messages.length ? (userMsg.content || 'File').slice(0, 40) : c.title
+      return { ...c, title, messages: [...c.messages, userMsg, placeholder] }
+    }))
+  }
+
   const refreshHistory = () => {
     fetch(`${API}/chat/history`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json()).then(d => {
         if (!d.chats?.length) return
-        const newest = d.chats[0]
-        setChats(prev => prev.map(c => c.id === activeId ? { ...c, dbId: newest.id } : c))
+        setChats(prev => prev.map(c => c.id === activeId ? { ...c, dbId: d.chats[0].id } : c))
       }).catch(() => {})
   }
 
-  // File upload handler
   const handleUpload = useCallback(async (message, file) => {
     if (loading) return
     const current = activeRef.current
@@ -105,48 +110,32 @@ export default function ChatPage() {
     const asstId = uid()
     addMessages(userMsg, asstId)
     setLoading(true)
-
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('message', message)
-      formData.append('model', model)
-      formData.append('chat_id', current?.dbId || '')
-      formData.append('history', JSON.stringify((current?.messages || []).slice(-6).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 600) }))))
-
-      const res = await fetch(`${API}/chat/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      })
+      const fd = new FormData()
+      fd.append('file', file); fd.append('message', message); fd.append('model', model)
+      fd.append('chat_id', current?.dbId || '')
+      fd.append('history', JSON.stringify((current?.messages || []).slice(-6).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 600) }))))
+      const res = await fetch(`${API}/chat/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd })
       const data = await res.json()
       patchAssistant(asstId, { content: data.response || '⚠️ No response', streaming: false, error: !!data.error })
       if (!current?.dbId) refreshHistory()
-    } catch (err) {
-      patchAssistant(asstId, { content: '⚠️ Upload failed. Try again.', streaming: false, error: true })
-    } finally {
-      setLoading(false)
-    }
+    } catch { patchAssistant(asstId, { content: '⚠️ Upload failed.', streaming: false, error: true }) }
+    finally { setLoading(false) }
   }, [activeId, loading, model, token])
 
-  // Stream message handler
   const sendMessage = useCallback(async (text, enableSearch = false) => {
     const trimmed = text?.trim()
     if (!trimmed || loading) return
     const current = activeRef.current
     const history = (current?.messages || []).filter(m => !m.streaming && !m.error)
       .slice(-6).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 600) }))
-
     const userMsg = { id: uid(), role: 'user', content: trimmed }
     const asstId = uid()
     addMessages(userMsg, asstId)
     setLoading(true)
     const ctrl = new AbortController()
     ctrlRef.current = ctrl
-    let full = "", lastUpdate = 0
-
-    const patch = (changes) => patchAssistant(asstId, changes)
-
+    let full = '', lastUpdate = 0
     try {
       const res = await fetch(`${API}/chat/stream`, {
         method: 'POST',
@@ -157,26 +146,19 @@ export default function ChatPage() {
       if (!res.ok || !res.body) throw new Error('Stream failed')
       const reader = res.body.getReader()
       const dec = new TextDecoder()
-      
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         full += dec.decode(value, { stream: true }).replace(/\u0000/g, '')
-        const now = Date.now(); if (now - lastUpdate > 30) { patch({ content: full, streaming: true }); lastUpdate = now }
+        const now = Date.now()
+        if (now - lastUpdate > 30) { patchAssistant(asstId, { content: full, streaming: true }); lastUpdate = now }
       }
       full += dec.decode().replace(/\u0000/g, '')
-      
-      patch({ content: full.trim() || '…', streaming: false })
+      patchAssistant(asstId, { content: full.trim() || '…', streaming: false })
       if (!current?.dbId) refreshHistory()
     } catch (err) {
-      
-      if (err.name === 'AbortError') {
-        patch({ content: full.trim() || 'Stopped.', streaming: false, stopped: true })
-      } else {
-        const msg = err?.message ? String(err.message) : String(err)
-        patch({ content: `⚠️ Something went wrong.\n${msg}`, streaming: false, error: true })
-      }
-
+      if (err.name === 'AbortError') patchAssistant(asstId, { content: full.trim() || 'Stopped.', streaming: false, stopped: true })
+      else patchAssistant(asstId, { content: '⚠️ Something went wrong. Is Ollama running?', streaming: false, error: true })
     } finally {
       setLoading(false)
       if (ctrlRef.current === ctrl) ctrlRef.current = null
@@ -184,7 +166,6 @@ export default function ChatPage() {
   }, [activeId, loading, model, token])
 
   const stopGen = useCallback(() => ctrlRef.current?.abort(), [])
-
   const regenerate = useCallback(async (msgId) => {
     const chat = chats.find(c => c.id === activeId)
     if (!chat) return
@@ -196,10 +177,13 @@ export default function ChatPage() {
 
   return (
     <div className="shell">
-      {sidebarOpen && (
-        <Sidebar chats={chats} activeId={activeId} onSelect={setActiveId}
-          onNew={startNewChat} onDelete={deleteChat} user={user} navigate={navigate} />
-      )}
+      <Sidebar
+        chats={chats} activeId={activeId}
+        onSelect={setActiveId} onNew={startNewChat}
+        onDelete={deleteChat} onPin={pinChat}
+        user={user} navigate={navigate}
+        isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)}
+      />
       <ChatWindow
         chat={activeChat} loading={loading}
         onSend={sendMessage} onStop={stopGen}

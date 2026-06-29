@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, urllib.error, urllib.request, base64
+import json, os, urllib.error, urllib.request
 from typing import Iterable
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -8,19 +8,17 @@ OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava:7b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "60m")
 
-SYSTEM_PROMPT = """You are Kryonix AI — a powerful, helpful, and friendly AI assistant.
+SYSTEM_PROMPT = """You are Kryonix AI. You are a smart, helpful, and direct assistant.
 
-CRITICAL RULES:
-- NEVER say "I'm sorry, I'm just an AI" or "I don't have the capability"
-- ALWAYS give a direct, useful, complete answer
-- Be confident and solution-focused
-- Reply in the same language the user writes in (Tamil, English, Hindi etc.)
-- For images: describe them in detail and answer any questions about them
-- For files: analyze the content thoroughly and answer questions
-- For web search results: summarize and give insights
-- For code: give complete, working, copy-ready code
-
-You are Kryonix AI — built and hosted privately. Never mention OpenAI, ChatGPT, Claude."""
+IMPORTANT RULES — always follow these:
+1. Always give a helpful, direct answer. Never refuse simple questions.
+2. Never say "I'm sorry" or "I can't" — always TRY to help.
+3. If you don't know something recent, say what you DO know about the topic, then suggest where to find current info.
+4. Reply in the same language the user uses — Tamil, English, Hindi, etc.
+5. For web search requests: say "I don't have live internet access, but here's what I know about [topic]:" then give useful information.
+6. For images: describe them in detail.
+7. For code: give complete, working code.
+8. Be confident, friendly, and genuinely helpful — like a smart friend who always tries to help."""
 
 def _request(messages, *, stream: bool, model=None):
     payload = {
@@ -32,8 +30,8 @@ def _request(messages, *, stream: bool, model=None):
             "temperature": 0.7,
             "top_p": 0.9,
             "num_ctx": 2048,
-            "num_predict": 1024,
-            "num_batch": 512,
+            "num_predict": 512,
+            "num_batch": 256,
             "num_thread": 4,
         }
     }
@@ -54,25 +52,25 @@ def build_messages(message: str, history=None, file_context=None, search_context
     msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
     model = OLLAMA_MODEL
 
-    for item in (history or [])[-6:]:
+    for item in (history or [])[-4:]:
         r, c = item.get("role"), item.get("content")
         if r in {"user", "assistant"} and c:
-            msgs.append({"role": r, "content": str(c)[:600]})
+            msgs.append({"role": r, "content": str(c)[:400]})
 
     if file_context and file_context.get("type") == "image":
         model = OLLAMA_VISION_MODEL
-        user_content = [
+        msgs.append({"role": "user", "content": [
             {"type": "text", "text": message or "Describe this image in detail."},
             {"type": "image_url", "image_url": {"url": f"data:{file_context['content_type']};base64,{file_context['base64']}"}}
-        ]
-        msgs.append({"role": "user", "content": user_content})
+        ]})
     elif file_context and file_context.get("type") == "text":
-        file_info = f"[{file_context['file_type']}: {file_context['filename']}]\n\nContent:\n{file_context['content']}\n\n"
-        msgs.append({"role": "user", "content": file_info + (message or "Analyze this.")})
+        msgs.append({"role": "user", "content": f"[File: {file_context['filename']}]\n{file_context['content'][:3000]}\n\nUser question: {message}"})
     elif search_context:
-        msgs.append({"role": "user", "content": f"{search_context}\n\nAnswer: {message}"})
+        msgs.append({"role": "user", "content": f"Here are web search results:\n{search_context}\n\nBased on this, answer: {message}"})
     else:
-        msgs.append({"role": "user", "content": message[:6000]})
+        # Inject reminder for small models
+        full_msg = f"{message}\n\n[Remember: Give a direct, helpful answer. Do not say you cannot help.]"
+        msgs.append({"role": "user", "content": full_msg[:4000]})
 
     return msgs, model
 
@@ -81,26 +79,20 @@ def stream_ai_response(message: str, history=None, model=None, file_context=None
     use_model = model or detected_model
     try:
         resp = _request(msgs, stream=True, model=use_model)
-        # Collect into larger chunks before sending — 40 chars minimum
         buffer = ""
         try:
             for raw in resp:
                 line = raw.decode("utf-8", errors="ignore").strip()
-                if not line:
-                    continue
+                if not line: continue
                 data = json.loads(line)
                 chunk = data.get("message", {}).get("content", "")
                 if chunk:
                     buffer += chunk
-                    # Flush on sentence end, newline, or when buffer is big enough
-                    if (len(buffer) >= 40 or
-                        any(buffer.endswith(c) for c in ['.', '!', '?', '\n', ':', ';']) or
-                        data.get("done")):
+                    if len(buffer) >= 30 or any(buffer.endswith(c) for c in ['.','!','?','\n',':',';']):
                         yield buffer
                         buffer = ""
                 if data.get("done"):
-                    if buffer:
-                        yield buffer
+                    if buffer: yield buffer
                     break
         finally:
             getattr(resp, "close", lambda: None)()
@@ -109,9 +101,8 @@ def stream_ai_response(message: str, history=None, model=None, file_context=None
 
 def get_ai_response(message: str, history=None, model=None, file_context=None, search_context=None) -> str:
     msgs, detected_model = build_messages(message, history, file_context, search_context)
-    use_model = model or detected_model
     try:
-        resp = _request(msgs, stream=False, model=use_model)
+        resp = _request(msgs, stream=False, model=model or detected_model)
         try:
             data = json.loads(resp.read().decode())
         finally:

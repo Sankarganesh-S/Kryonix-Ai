@@ -11,6 +11,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import ChatPage from './pages/ChatPage'
 import AdminPage from './pages/AdminPage'
+import SettingsPage from './pages/SettingsPage'
+import ImageEditorPage from './pages/ImageEditorPage'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -25,6 +27,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/chat/:chatId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/image-editor" element={<ProtectedRoute><ImageEditorPage /></ProtectedRoute>} />
           <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />

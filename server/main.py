@@ -13,6 +13,7 @@ from server.models.chat import Chat, ChatMessage  # noqa
 from server.routes.auth import router as auth_router
 from server.routes.chat import router as chat_router
 from server.routes.admin import router as admin_router
+from server.routes.user import router as user_router
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -27,6 +28,7 @@ app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_credentials=Tru
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(admin_router)
+app.include_router(user_router)
 
 @app.get("/")
 def root():
