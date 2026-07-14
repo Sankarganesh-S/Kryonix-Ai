@@ -1,5 +1,10 @@
 from __future__ import annotations
-import urllib.request, urllib.parse, json, re, logging
+
+import json
+import logging
+import re
+import urllib.parse
+import urllib.request
 
 log = logging.getLogger(__name__)
 
@@ -8,10 +13,13 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+
 def search_duckduckgo(query: str, max_results: int = 5) -> list[dict]:
     """Search DuckDuckGo and return results."""
     try:
-        params = urllib.parse.urlencode({"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"})
+        params = urllib.parse.urlencode(
+            {"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"}
+        )
         url = f"https://api.duckduckgo.com/?{params}"
         req = urllib.request.Request(url, headers=HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -21,27 +29,32 @@ def search_duckduckgo(query: str, max_results: int = 5) -> list[dict]:
 
         # Abstract (main result)
         if data.get("AbstractText"):
-            results.append({
-                "title": data.get("Heading", "Result"),
-                "snippet": data["AbstractText"],
-                "url": data.get("AbstractURL", ""),
-                "source": data.get("AbstractSource", ""),
-            })
+            results.append(
+                {
+                    "title": data.get("Heading", "Result"),
+                    "snippet": data["AbstractText"],
+                    "url": data.get("AbstractURL", ""),
+                    "source": data.get("AbstractSource", ""),
+                }
+            )
 
         # Related topics
         for topic in data.get("RelatedTopics", [])[:max_results]:
             if isinstance(topic, dict) and topic.get("Text"):
-                results.append({
-                    "title": topic.get("Text", "")[:80],
-                    "snippet": topic.get("Text", ""),
-                    "url": topic.get("FirstURL", ""),
-                    "source": "DuckDuckGo",
-                })
+                results.append(
+                    {
+                        "title": topic.get("Text", "")[:80],
+                        "snippet": topic.get("Text", ""),
+                        "url": topic.get("FirstURL", ""),
+                        "source": "DuckDuckGo",
+                    }
+                )
 
         return results[:max_results]
     except Exception as e:
         log.error("Search error: %s", e)
         return []
+
 
 def format_search_context(query: str, results: list[dict]) -> str:
     if not results:
@@ -50,17 +63,33 @@ def format_search_context(query: str, results: list[dict]) -> str:
     for i, r in enumerate(results, 1):
         lines.append(f"{i}. {r['title']}")
         lines.append(f"   {r['snippet']}")
-        if r.get('url'):
+        if r.get("url"):
             lines.append(f"   Source: {r['url']}")
         lines.append("")
     return "\n".join(lines)
 
+
 def needs_web_search(message: str) -> bool:
     """Detect if the message needs a web search."""
     triggers = [
-        "search", "find", "look up", "what is the latest", "current", "today",
-        "news", "price of", "weather", "who is", "when did", "recent",
-        "2024", "2025", "2026", "தேடு", "என்ன நடக்கிறது", "இப்போது",
+        "search",
+        "find",
+        "look up",
+        "what is the latest",
+        "current",
+        "today",
+        "news",
+        "price of",
+        "weather",
+        "who is",
+        "when did",
+        "recent",
+        "2024",
+        "2025",
+        "2026",
+        "தேடு",
+        "என்ன நடக்கிறது",
+        "இப்போது",
     ]
     msg_lower = message.lower()
     return any(t in msg_lower for t in triggers)

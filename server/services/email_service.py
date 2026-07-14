@@ -1,8 +1,11 @@
-import os, smtplib, logging
+import logging
+import os
+import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from itsdangerous import URLSafeTimedSerializer
+
 from dotenv import load_dotenv
+from itsdangerous import URLSafeTimedSerializer
 
 load_dotenv()
 log = logging.getLogger(__name__)
@@ -15,16 +18,32 @@ EMAIL_FROM = os.getenv("EMAIL_FROM", "Kryonix AI <noreply@kryonix.ai>")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
 
+OTP_EMAIL_SUBJECT_REGISTER = os.getenv(
+    "OTP_EMAIL_SUBJECT_REGISTER",
+    "Confirm your Kryonix AI registration",
+)
+OTP_EMAIL_SUBJECT_LOGIN = os.getenv(
+    "OTP_EMAIL_SUBJECT_LOGIN",
+    "Your Kryonix AI sign-in code",
+)
+OTP_EMAIL_SUBJECT_RESET = os.getenv(
+    "OTP_EMAIL_SUBJECT_RESET",
+    "Reset your Kryonix AI password",
+)
+
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
+
 
 def generate_verification_token(email: str) -> str:
     return _serializer.dumps(email, salt="email-verify")
+
 
 def verify_email_token(token: str, max_age: int = 86400) -> str | None:
     try:
         return _serializer.loads(token, salt="email-verify", max_age=max_age)
     except Exception:
         return None
+
 
 def _send(to: str, subject: str, html: str):
     if not SMTP_USER or not SMTP_PASS:
@@ -44,6 +63,7 @@ def _send(to: str, subject: str, html: str):
         log.info("Email sent to %s", to)
     except Exception as e:
         log.error("Failed to send email: %s", e)
+
 
 def send_verification_email(to: str, username: str):
     token = generate_verification_token(to)
@@ -65,6 +85,7 @@ def send_verification_email(to: str, username: str):
     </div>
     """
     _send(to, "Verify your Kryonix AI email", html)
+
 
 def send_welcome_email(to: str, username: str):
     html = f"""

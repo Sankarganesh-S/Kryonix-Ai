@@ -1,18 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
+import json
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from typing import Optional
-import json
 
 from server.db import get_db
 from server.models.user import User
+from server.repositories.chat_repo import (
+    create_chat,
+    delete_chat,
+    get_chat_with_messages,
+    get_user_chats,
+    user_owns_chat,
+)
 from server.services.auth_service import get_current_user
 from server.services.chat_service import chat_stream, chat_sync
 from server.services.file_service import process_file
-from server.repositories.chat_repo import get_user_chats, get_chat_with_messages, delete_chat
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+GENERIC_CHAT_ERROR = "The AI service is unavailable right now. Please try again shortly."
+
 
 class Msg(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
@@ -21,46 +31,104 @@ class Msg(BaseModel):
     chat_id: int | None = None
     enable_search: bool = False
 
+
 @router.get("/history")
 def history(u: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return {"chats": get_user_chats(db, user_id=u.id)}
 
+
 @router.get("/history/{chat_id}")
-def get_chat(chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def get_chat(
+    chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     c = get_chat_with_messages(db, chat_id=chat_id, user_id=u.id)
-    if not c: raise HTTPException(404, "Chat not found")
+    if not c:
+        raise HTTPException(404, "Chat not found")
     return c
 
+
 @router.delete("/history/{chat_id}")
-def del_chat(chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not delete_chat(db, chat_id=chat_id, user_id=u.id): raise HTTPException(404, "Chat not found")
+def del_chat(
+    chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    if not delete_chat(db, chat_id=chat_id, user_id=u.id):
+        raise HTTPException(404, "Chat not found")
     return {"deleted": True}
+
 
 @router.post("")
 def chat(req: Msg, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
     msg = req.message.strip()
-    if not msg: return {"response": "Empty message.", "error": True}
+    if not msg:
+        return {"response": "Empty message.", "error": True}
     try:
-        r = chat_sync(db, message=msg, history=req.history or [], model=req.model,
-                      chat_id=req.chat_id, user_id=u.id, enable_search=req.enable_search)
+        r = chat_sync(
+            db,
+            message=msg,
+            history=req.history or [],
+            model=req.model,
+            chat_id=req.chat_id,
+            user_id=u.id,
+            enable_search=req.enable_search,
+        )
         return {"response": r["response"], "chat_id": r["chat_id"]}
-    except Exception as e:
+    except ValueError as e:
         db.rollback()
-        return {"response": str(e), "error": True}
+        raise HTTPException(404, str(e)) from e
+    except Exception:
+        db.rollback()
+        return {"response": GENERIC_CHAT_ERROR, "error": True}
+
 
 @router.post("/stream")
-def stream(req: Msg, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def stream(
+    req: Msg, u: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     msg = req.message.strip()
-    if not msg: return StreamingResponse(iter(["Empty message."]), media_type="text/plain")
+    if not msg:
+        return StreamingResponse(iter(["Empty message."]), media_type="text/plain")
+
+    if req.chat_id is not None and not user_owns_chat(
+        db, chat_id=req.chat_id, user_id=u.id
+    ):
+        raise HTTPException(404, "Chat not found")
+
+    chat_id = req.chat_id
+    if chat_id is None:
+        chat = create_chat(db, title=msg[:50], model=req.model, user_id=u.id)
+        chat_id = chat.id
+
     def gen():
         try:
-            for chunk, _ in chat_stream(db, message=msg, history=req.history or [], model=req.model,
-                                         chat_id=req.chat_id, user_id=u.id, enable_search=req.enable_search):
+            for chunk, _ in chat_stream(
+                db,
+                message=msg,
+                history=req.history or [],
+                model=req.model,
+                chat_id=chat_id,
+                user_id=u.id,
+                enable_search=req.enable_search,
+            ):
                 yield chunk
-        except Exception as e:
-            db.rollback(); yield str(e)
-    return StreamingResponse(gen(), media_type="text/plain",
-        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+        except ValueError:
+            db.rollback()
+            yield "Chat not found."
+        except Exception:
+            db.rollback()
+            yield GENERIC_CHAT_ERROR
+
+    headers = {
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "X-Chat-ID": str(chat_id),
+    }
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/plain",
+        headers=headers,
+    )
+
 
 @router.post("/upload")
 async def upload_file(
@@ -70,7 +138,7 @@ async def upload_file(
     model: Optional[str] = Form(default=None),
     history: Optional[str] = Form(default="[]"),
     u: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     data = await file.read()
     file_context = process_file(file.filename, file.content_type or "", data)
@@ -86,25 +154,39 @@ async def upload_file(
     cid = int(chat_id) if chat_id and chat_id.isdigit() else None
 
     try:
-        r = chat_sync(db, message=message, history=hist, model=model,
-                      chat_id=cid, user_id=u.id, file_context=file_context)
+        r = chat_sync(
+            db,
+            message=message,
+            history=hist,
+            model=model,
+            chat_id=cid,
+            user_id=u.id,
+            file_context=file_context,
+        )
         return {
             "response": r["response"],
             "chat_id": r["chat_id"],
             "file_name": file.filename,
-            "file_type": file_context.get("file_type", file_context.get("type"))
+            "file_type": file_context.get("file_type", file_context.get("type")),
         }
-    except Exception as e:
+    except ValueError as e:
         db.rollback()
-        return {"response": str(e), "error": True}
+        raise HTTPException(404, str(e)) from e
+    except Exception:
+        db.rollback()
+        return {"response": GENERIC_CHAT_ERROR, "error": True}
 
 
 # ── Pin/Unpin chat ────────────────────────────────
 @router.patch("/history/{chat_id}/pin")
-def pin_chat(chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def pin_chat(
+    chat_id: int, u: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
     from server.models.chat import Chat
+
     chat = db.query(Chat).filter(Chat.id == chat_id, Chat.user_id == u.id).first()
-    if not chat: raise HTTPException(404, "Chat not found")
+    if not chat:
+        raise HTTPException(404, "Chat not found")
     # Toggle pin using title prefix
     if chat.title and chat.title.startswith("📌 "):
         chat.title = chat.title[3:]
@@ -113,17 +195,35 @@ def pin_chat(chat_id: int, u: User = Depends(get_current_user), db: Session = De
     db.commit()
     return {"id": chat.id, "title": chat.title, "pinned": chat.title.startswith("📌 ")}
 
+
 # ── Export chat ────────────────────────────────────
 @router.get("/history/{chat_id}/export")
-def export_chat(chat_id: int, fmt: str = "txt", u: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    from server.repositories.chat_repo import get_chat_with_messages
+def export_chat(
+    chat_id: int,
+    fmt: str = "txt",
+    u: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from fastapi.responses import PlainTextResponse
+
+    from server.repositories.chat_repo import get_chat_with_messages
+
     chat = get_chat_with_messages(db, chat_id=chat_id, user_id=u.id)
-    if not chat: raise HTTPException(404, "Chat not found")
-    lines = [f"Kryonix AI — Chat Export", f"Title: {chat['title']}", f"Date: {chat['created_at']}", "="*50, ""]
+    if not chat:
+        raise HTTPException(404, "Chat not found")
+    lines = [
+        f"Kryonix AI — Chat Export",
+        f"Title: {chat['title']}",
+        f"Date: {chat['created_at']}",
+        "=" * 50,
+        "",
+    ]
     for m in chat["messages"]:
         role = "You" if m["role"] == "user" else "Kryonix AI"
         lines.append(f"{role}:")
         lines.append(m["content"])
         lines.append("")
-    return PlainTextResponse("\n".join(lines), headers={"Content-Disposition": f'attachment; filename="chat-{chat_id}.txt"'})
+    return PlainTextResponse(
+        "\n".join(lines),
+        headers={"Content-Disposition": f'attachment; filename="chat-{chat_id}.txt"'},
+    )
