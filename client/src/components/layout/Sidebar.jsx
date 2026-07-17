@@ -13,9 +13,9 @@ import {
   Download,
   Image,
 } from "lucide-react";
-import usePopup from "../Popup/usePopup";
+import usePopup from "../../Popup/usePopup";
 
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../../features/auth/AuthContext";
 
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -239,6 +239,7 @@ function Sidebar({
                   description: "You will be signed out of your account.",
                   confirmText: "Logout",
                   cancelText: "Cancel",
+                  onCancel: () => {},
                   onConfirm: () => {
                     logout();
                     navigate("/login");

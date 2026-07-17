@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../AuthContext";
+
 import { Sparkles, AlertCircle, RefreshCw, ShieldCheck } from "lucide-react";
 
 export default function OtpPage() {
@@ -31,7 +32,6 @@ export default function OtpPage() {
     newDigits[i] = val.slice(-1);
     setDigits(newDigits);
     if (val && i < 5) refs.current[i + 1]?.focus();
-    // Auto submit when all filled
     if (newDigits.every((d) => d) && val) {
       submitOtp(newDigits.join(""));
     }
@@ -128,7 +128,6 @@ export default function OtpPage() {
           </div>
         )}
 
-        {/* OTP input boxes */}
         <div
           style={{
             display: "flex",
@@ -210,3 +209,4 @@ export default function OtpPage() {
     </div>
   );
 }
+

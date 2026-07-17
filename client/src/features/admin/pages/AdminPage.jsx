@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../../auth/AuthContext";
 import {
   Users,
   MessageSquare,
@@ -13,7 +13,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import { usePopup } from "../Popup";
+import { usePopup } from "../../../Popup";
 
 
 

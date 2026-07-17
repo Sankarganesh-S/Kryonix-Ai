@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../AuthContext";
+
 import {
   Sparkles,
   Mail,
@@ -45,7 +46,6 @@ export default function ForgotPasswordPage() {
     );
   };
 
-  // Step 1 — send OTP
   const sendOtp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -67,7 +67,6 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  // Step 2 — verify OTP
   const handleDigit = (i, val) => {
     if (!/^\d*$/.test(val)) return;
     const nd = [...digits];
@@ -101,7 +100,6 @@ export default function ForgotPasswordPage() {
         body: JSON.stringify({ email: email.trim(), otp }),
       });
       const d = await r.json();
-      // If verify-otp succeeds it logs in — but for forgot password we just move to step 3
       if (r.ok) setStep(3);
       else throw new Error(d.detail || "Invalid OTP");
     } catch (e) {
@@ -125,7 +123,6 @@ export default function ForgotPasswordPage() {
     refs.current[0]?.focus();
   };
 
-  // Step 3 — reset password
   const resetPassword = async (e) => {
     e.preventDefault();
     setError("");
@@ -151,7 +148,6 @@ export default function ForgotPasswordPage() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Failed to reset password");
       setSuccess("Password reset! Redirecting...");
-      // Save token and redirect
       localStorage.setItem("kryonix_token", d.access_token);
       localStorage.setItem("kryonix_user", JSON.stringify(d.user));
       setTimeout(() => navigate("/chat"), 1500);
@@ -173,7 +169,6 @@ export default function ForgotPasswordPage() {
           <span className="auth-logo-text">Kryonix AI</span>
         </div>
 
-        {/* Step indicators */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
           {["Email", "Verify OTP", "New Password"].map((s, i) => (
             <div key={i} style={{ flex: 1, textAlign: "center" }}>
@@ -211,18 +206,11 @@ export default function ForgotPasswordPage() {
           </div>
         )}
 
-        {/* Step 1 — Email */}
         {step === 1 && (
           <>
             <h1 className="auth-heading">Forgot password?</h1>
-            <p className="auth-sub">
-              Enter your email and we'll send you an OTP
-            </p>
-            <form
-              onSubmit={sendOtp}
-              className="auth-form"
-              style={{ marginTop: 24 }}
-            >
+            <p className="auth-sub">Enter your email and we'll send you an OTP</p>
+            <form onSubmit={sendOtp} className="auth-form" style={{ marginTop: 24 }}>
               <div className="auth-field">
                 <label className="auth-label">Email address</label>
                 <div className="auth-input-wrap">
@@ -245,7 +233,6 @@ export default function ForgotPasswordPage() {
           </>
         )}
 
-        {/* Step 2 — OTP */}
         {step === 2 && (
           <>
             <div style={{ textAlign: "center", marginBottom: 20 }}>
@@ -347,18 +334,11 @@ export default function ForgotPasswordPage() {
           </>
         )}
 
-        {/* Step 3 — New Password */}
         {step === 3 && (
           <>
             <h1 className="auth-heading">Set new password</h1>
-            <p className="auth-sub">
-              Choose a strong password for your account
-            </p>
-            <form
-              onSubmit={resetPassword}
-              className="auth-form"
-              style={{ marginTop: 24 }}
-            >
+            <p className="auth-sub">Choose a strong password for your account</p>
+            <form onSubmit={resetPassword} className="auth-form" style={{ marginTop: 24 }}>
               <div className="auth-field">
                 <label className="auth-label">New password</label>
                 <div className="auth-input-wrap">
@@ -411,3 +391,4 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
+

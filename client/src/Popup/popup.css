@@ -15,26 +15,20 @@
   to{opacity:1}
 }
 
-
-
-
 .popup-card{
   width:min(520px, 100%);
   border-radius:16px;
   transform: translateY(6px) scale(.99);
   animation: popupSlideIn .18s ease-out forwards;
+  background:var(--card-bg, #1f1f31);
+  border:2px solid var(--border, rgba(100, 83, 83, 0.12));
+  box-shadow:0 18px 60px rgba(0,0,0,.45);
+  color:var(--text, #eaeaf2);
+  overflow:hidden;
 }
 
 @keyframes popupSlideIn{
   to{ transform: translateY(0) scale(1); }
-}
-
-
-  background:var(--card-bg, #0f0f18);
-  border:1px solid var(--border, rgba(255,255,255,.12));
-  box-shadow:0 18px 60px rgba(0,0,0,.45);
-  color:var(--text, #eaeaf2);
-  overflow:hidden;
 }
 
 .popup-card.danger .popup-icon{ color:#ef4444; }
@@ -62,7 +56,8 @@
 .popup-close{
   background:none;
   border:none;
-  color:var(--muted,#a1a1aa);
+  color:var(--muted,#f7f7fd);
+  /* color:#f7f7fd; */
   font-size:22px;
   cursor:pointer;
   line-height:1;
@@ -90,6 +85,10 @@
   cursor:pointer;
   font-weight:700;
 }
+.popup-btn:hover{ opacity:.75;
+
+
+}
 
 .popup-btn:disabled{ opacity:.6; cursor:not-allowed; }
 
@@ -101,4 +100,3 @@
 .popup-btn.primary.danger{
   background:linear-gradient(135deg,#ef4444,#dc2626);
 }
-

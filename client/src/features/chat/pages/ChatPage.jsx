@@ -2,10 +2,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useDispatch, useSelector } from "react-redux";
-import { setModel, setTheme } from "../store/uiSlice";
-import Sidebar from "../components/Sidebar";
+import { setModel, setTheme } from "../../../store/uiSlice";
+import Sidebar from "../../../components/layout/Sidebar";
 import ChatWindow from "../components/ChatWindow";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../../../features/auth/AuthContext";
 
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
 const MODEL_OPTIONS = [

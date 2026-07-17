@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../AuthContext";
+
 import {
   Eye,
   EyeOff,
@@ -30,8 +31,6 @@ export default function RegisterPage() {
   const strengthLabel = ["", "Weak", "Good", "Strong"];
   const strengthColor = ["", "#ef4444", "#f59e0b", "#22c55e"];
 
-  // const [adminSecret, setAdminSecret] = useState("");/
-
   const submit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -39,8 +38,8 @@ export default function RegisterPage() {
       setError("Password must be at least 6 characters");
       return;
     }
-   const r = await register(email.trim(), username.trim(), password);
-   
+    const r = await register(email.trim(), username.trim(), password);
+
     if (r.ok) {
       if (r.requires_otp)
         navigate("/otp", { state: { email: r.email, purpose: "register" } });
@@ -101,22 +100,6 @@ export default function RegisterPage() {
               />
             </div>
           </div>
-          {/* <div className="auth-field">
-            <label className="auth-label">Admin secret (optional)</label>
-            <div className="auth-input-wrap">
-              <Lock size={15} className="auth-ico" />
-              <input
-                className="auth-input"
-                type="password"
-                value={adminSecret}
-                onChange={(e) => setAdminSecret(e.target.value)}
-                placeholder="Admin secret code"
-              />
-            </div>
-            <p className="auth-hint" style={{ marginTop: 4 }}>
-              Provide this only if you are creating the first admin user.
-            </p>
-          </div> */}
           <div className="auth-field">
             <label className="auth-label">Password</label>
             <div className="auth-input-wrap">
@@ -173,3 +156,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+

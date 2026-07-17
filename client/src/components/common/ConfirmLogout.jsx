@@ -1,9 +1,8 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import Button from "./Button";
-import { usePopup } from "../../Popup";
+import usePopup from "../../Popup/usePopup";
 
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../features/auth/AuthContext";
 
 export default function ConfirmLogout({
   className,
@@ -16,14 +15,14 @@ export default function ConfirmLogout({
   const navigate = useNavigate();
   const popup = usePopup();
 
-  // Keep signature stable; popup system owns open/close state.
   const onCancel = useCallback(() => {}, []);
 
   return (
-    <Button
+    <button
       className={className}
-      variant={buttonVariant}
-      size={buttonSize}
+      data-variant={buttonVariant}
+      data-size={buttonSize}
+      type="button"
       onClick={() =>
         popup.confirm({
           title: "Logout?",
@@ -40,7 +39,6 @@ export default function ConfirmLogout({
       }
     >
       {icon}
-    </Button>
+    </button>
   );
 }
-

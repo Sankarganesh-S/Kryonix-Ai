@@ -3,7 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../AuthContext";
+
 import { Eye, EyeOff, Sparkles, Mail, Lock, AlertCircle } from "lucide-react";
 
 export default function LoginPage() {
@@ -91,13 +92,8 @@ export default function LoginPage() {
             {errors.password && <p className="auth-hint">{errors.password.message}</p>}
           </div>
 
-          {/* Forgot password link */}
           <div style={{ textAlign: "right", marginTop: -8 }}>
-            <Link
-              to="/forgot-password"
-              className="auth-link"
-              style={{ fontSize: 13 }}
-            >
+            <Link to="/forgot-password" className="auth-link" style={{ fontSize: 13 }}>
               Forgot password?
             </Link>
           </div>
@@ -116,3 +112,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
