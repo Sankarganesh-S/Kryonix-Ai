@@ -1,19 +1,31 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AdminRoute from "./components/AdminRoute";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import OtpPage from "./pages/OtpPage";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import VerifyEmailPage from "./pages/VerifyEmailPage";
-import ChatPage from "./pages/ChatPage";
-import AdminPage from "./pages/AdminPage";
-import SettingsPage from "./pages/SettingsPage";
-import ImageEditorPage from "./pages/ImageEditorPage";
+
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const OtpPage = lazy(() => import("./pages/OtpPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const ImageEditorPage = lazy(() => import("./pages/ImageEditorPage"));
+
+function RouteLoading() {
+  return (
+    <div className="route-loading" role="status" aria-live="polite">
+      <div className="auth-spinner" />
+      <span>Loading Kryonix AI…</span>
+    </div>
+  );
+}
 
 export default function Routers() {
   return (
-    <Routes>
+    <Suspense fallback={<RouteLoading />}>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/otp" element={<OtpPage />} />
@@ -62,6 +74,7 @@ export default function Routers() {
       />
       <Route path="/" element={<Navigate to="/chat" replace />} />
       <Route path="*" element={<Navigate to="/chat" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

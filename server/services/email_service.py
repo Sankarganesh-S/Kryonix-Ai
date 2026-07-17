@@ -1,35 +1,33 @@
 import logging
 import os
 import smtplib
+from pathlib import Path
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
-from dotenv import load_dotenv
 from itsdangerous import URLSafeTimedSerializer
+from dotenv import load_dotenv
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE = BASE_DIR / ".env"
+load_dotenv(dotenv_path=ENV_FILE, override=True)
+
 log = logging.getLogger(__name__)
+
+# Ensure logs from this module are visible when running under Uvicorn.
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=logging.INFO)
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "Kryonix AI <noreply@kryonix.ai>")
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret")
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-OTP_EMAIL_SUBJECT_REGISTER = os.getenv(
-    "OTP_EMAIL_SUBJECT_REGISTER",
-    "Confirm your Kryonix AI registration",
-)
-OTP_EMAIL_SUBJECT_LOGIN = os.getenv(
-    "OTP_EMAIL_SUBJECT_LOGIN",
-    "Your Kryonix AI sign-in code",
-)
-OTP_EMAIL_SUBJECT_RESET = os.getenv(
-    "OTP_EMAIL_SUBJECT_RESET",
-    "Reset your Kryonix AI password",
-)
+OTP_EMAIL_SUBJECT_REGISTER = os.getenv("OTP_EMAIL_SUBJECT_REGISTER", "Confirm your Kryonix AI registration")
+OTP_EMAIL_SUBJECT_LOGIN = os.getenv("OTP_EMAIL_SUBJECT_LOGIN", "Your Kryonix AI sign-in code")
+OTP_EMAIL_SUBJECT_RESET = os.getenv("OTP_EMAIL_SUBJECT_RESET", "Reset your Kryonix AI password")
 
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
 
@@ -38,7 +36,7 @@ def generate_verification_token(email: str) -> str:
     return _serializer.dumps(email, salt="email-verify")
 
 
-def verify_email_token(token: str, max_age: int = 86400) -> str | None:
+def verify_email_token(token: str, max_age: int = 86400):
     try:
         return _serializer.loads(token, salt="email-verify", max_age=max_age)
     except Exception:
@@ -55,14 +53,25 @@ def _send(to: str, subject: str, html: str):
     msg["To"] = to
     msg.attach(MIMEText(html, "html"))
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(SMTP_USER, SMTP_PASS)
-            s.sendmail(SMTP_USER, to, msg.as_string())
+        log.info("SMTP send starting: to=%s subject=%s from=%s host=%s:%s", to, subject, EMAIL_FROM, SMTP_HOST, SMTP_PORT)
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.sendmail(SMTP_USER, [to], msg.as_string())
         log.info("Email sent to %s", to)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        log.exception("SMTP Auth Failed: %s", e)
+        return False
+    except smtplib.SMTPException as e:
+        log.exception("SMTP Error: %s", e)
+        return False
     except Exception as e:
-        log.error("Failed to send email: %s", e)
+        log.exception("Email Failed: %s (%s)", e, type(e).__name__)
+        return False
+
 
 
 def send_verification_email(to: str, username: str):
@@ -76,15 +85,13 @@ def send_verification_email(to: str, username: str):
       </div>
       <div style="padding:32px">
         <p>Hi <strong>{username}</strong>,</p>
-        <p>Thanks for creating your Kryonix account. Click below to verify your email and start chatting.</p>
-        <a href="{link}" style="display:inline-block;margin:20px 0;padding:14px 32px;background:linear-gradient(135deg,#7c6ef5,#5b4de0);color:white;border-radius:12px;text-decoration:none;font-weight:600">
-          Verify Email
-        </a>
-        <p style="color:#71717a;font-size:13px">Link expires in 24 hours. If you didn't create this account, ignore this email.</p>
+        <p>Thanks for creating your Kryonix AI account. Click below to verify your email.</p>
+        <a href="{link}" style="display:inline-block;margin:20px 0;padding:14px 32px;background:linear-gradient(135deg,#7c6ef5,#5b4de0);color:white;border-radius:12px;text-decoration:none;font-weight:600">Verify Email</a>
+        <p style="color:#71717a;font-size:13px">Link expires in 24 hours.</p>
       </div>
     </div>
     """
-    _send(to, "Verify your Kryonix AI email", html)
+    _send(to, OTP_EMAIL_SUBJECT_REGISTER, html)
 
 
 def send_welcome_email(to: str, username: str):
@@ -95,10 +102,8 @@ def send_welcome_email(to: str, username: str):
       </div>
       <div style="padding:32px">
         <p>Hi <strong>{username}</strong> 🎉</p>
-        <p>Your email is verified. You can now use Kryonix AI — your personal AI assistant powered entirely by your own server.</p>
-        <a href="{FRONTEND_URL}/chat" style="display:inline-block;margin:20px 0;padding:14px 32px;background:linear-gradient(135deg,#7c6ef5,#5b4de0);color:white;border-radius:12px;text-decoration:none;font-weight:600">
-          Start Chatting
-        </a>
+        <p>Your email is verified. Welcome to Kryonix AI!</p>
+        <a href="{FRONTEND_URL}/chat" style="display:inline-block;margin:20px 0;padding:14px 32px;background:linear-gradient(135deg,#7c6ef5,#5b4de0);color:white;border-radius:12px;text-decoration:none;font-weight:600">Start Chatting</a>
       </div>
     </div>
     """

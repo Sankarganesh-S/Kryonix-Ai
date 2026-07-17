@@ -1,0 +1,14 @@
+@use "./font";
+@use "./custom";
+@use "./responsive";
+
+// Application base styles
+@use "sass:color";
+
+@include font.fonts;
+@include custom.base;
+@include responsive.media;
+
+// Global shared UI primitives
+@import "./global-ui";
+

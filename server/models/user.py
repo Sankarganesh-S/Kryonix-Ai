@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime
 import enum
+import os
 
-from sqlalchemy import Boolean, DateTime, Enum, String
+from sqlalchemy import Boolean, Column, DateTime, Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.models.base import Base
@@ -38,6 +39,14 @@ class User(Base):
     last_seen: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    avatar_image: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    avatar_color: Mapped[str] = mapped_column(
+        String(20), default="#7c6ef5", nullable=False
+    )
+    accent_color: Mapped[str] = mapped_column(
+        String(20), default="#7c6ef5", nullable=False
+    )
+    preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     chats: Mapped[list] = relationship(
         "Chat", back_populates="user", cascade="all, delete-orphan"

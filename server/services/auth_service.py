@@ -13,9 +13,14 @@ from sqlalchemy.orm import Session
 from server.db import get_db
 from server.models.user import User
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-prod")
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "").strip()
+if not JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY is not set. Refusing to run with insecure default.")
+
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))
+# Default: 60 minutes. Override via JWT_EXPIRE_MINUTES.
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -50,14 +55,19 @@ def get_current_user(
         user_id = payload.get("sub")
         if user_id is None:
             raise exc
-    except JWTError:
+        user_id_int = int(user_id)
+    except (JWTError, TypeError, ValueError):
         raise exc
-    user = db.query(User).filter(User.id == int(user_id)).first()
+
+    user = db.query(User).filter(User.id == user_id_int).first()
     if not user or not user.is_active:
         raise exc
-    # update last_seen
-    user.last_seen = datetime.now(UTC)
-    db.commit()
+    # update last_seen (best-effort; don't block auth on DB write issues)
+    try:
+        user.last_seen = datetime.now(UTC)
+        db.commit()
+    except Exception:
+        db.rollback()
     return user
 
 

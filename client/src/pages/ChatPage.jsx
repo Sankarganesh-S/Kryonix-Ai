@@ -29,11 +29,11 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const [chats, setChats] = useState([newChat()]);
   const [activeId, setActiveId] = useState(chats[0].id);
-  const [loading, setLoading] = useState(false);
+  const [loadingByChat, setLoadingByChat] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile());
   const dispatch = useDispatch();
   const { model, theme } = useSelector((state) => state.ui);
-  const ctrlRef = useRef(null);
+  const controllerByChat = useRef({});
   const activeRef = useRef(null);
 
   const { data: savedChats } = useQuery({
@@ -103,7 +103,17 @@ export default function ChatPage() {
   }, [activeId]);
 
   const activeChat = chats.find((c) => c.id === activeId);
+  const activeLoading = Boolean(loadingByChat[activeId]);
   activeRef.current = activeChat;
+
+  const setChatLoading = (chatId, isLoading) => {
+    setLoadingByChat((prev) => {
+      const next = { ...prev };
+      if (isLoading) next[chatId] = true;
+      else delete next[chatId];
+      return next;
+    });
+  };
 
   const startNewChat = () => {
     const c = newChat();
@@ -149,10 +159,10 @@ export default function ChatPage() {
     [chats, token],
   );
 
-  const patchAssistant = (asstId, changes) => {
+  const patchAssistant = (chatId, asstId, changes) => {
     setChats((prev) =>
       prev.map((c) =>
-        c.id !== activeId
+        c.id !== chatId
           ? c
           : {
               ...c,
@@ -164,7 +174,7 @@ export default function ChatPage() {
     );
   };
 
-  const addMessages = (userMsg, asstId) => {
+  const addMessages = (chatId, userMsg, asstId) => {
     const placeholder = {
       id: asstId,
       role: "assistant",
@@ -173,7 +183,7 @@ export default function ChatPage() {
     };
     setChats((prev) =>
       prev.map((c) => {
-        if (c.id !== activeId) return c;
+        if (c.id !== chatId) return c;
         const title =
           c.title === "New Chat" && !c.messages.length
             ? (userMsg.content || "File").slice(0, 40)
@@ -181,6 +191,7 @@ export default function ChatPage() {
         return { ...c, title, messages: [...c.messages, userMsg, placeholder] };
       }),
     );
+    setChatLoading(chatId, true);
   };
 
   const refreshHistory = () => {
@@ -201,8 +212,8 @@ export default function ChatPage() {
 
   const handleUpload = useCallback(
     async (message, file) => {
-      if (loading) return;
       const current = activeRef.current;
+      if (!current || activeLoading) return;
       const userMsg = {
         id: uid(),
         role: "user",
@@ -210,8 +221,7 @@ export default function ChatPage() {
         file: file.name,
       };
       const asstId = uid();
-      addMessages(userMsg, asstId);
-      setLoading(true);
+      addMessages(current.id, userMsg, asstId);
       try {
         const fd = new FormData();
         fd.append("file", file);
@@ -235,31 +245,41 @@ export default function ChatPage() {
           body: fd,
         });
         const data = await res.json();
-        patchAssistant(asstId, {
+        patchAssistant(current.id, asstId, {
           content: data.response || "⚠️ No response",
           streaming: false,
           error: !!data.error,
         });
         if (!current?.dbId) refreshHistory();
       } catch {
-        patchAssistant(asstId, {
+        patchAssistant(current.id, asstId, {
           content: "⚠️ Upload failed.",
           streaming: false,
           error: true,
         });
       } finally {
-        setLoading(false);
+        if (current?.id) setChatLoading(current.id, false);
       }
     },
-    [activeId, loading, model, token],
+    [activeLoading, model, token],
   );
 
   const sendMessage = useCallback(
     async (text, enableSearch = false) => {
       const trimmed = text?.trim();
-      if (!trimmed || loading) return;
+      if (!trimmed || activeLoading) return;
       const current = activeRef.current;
-      const history = (current?.messages || [])
+      let targetChat = current;
+
+      if (current?.messages?.length) {
+        const nextChat = newChat();
+        setChats((prev) => [nextChat, ...prev]);
+        setActiveId(nextChat.id);
+        targetChat = nextChat;
+      }
+      if (!targetChat?.id) return;
+
+      const history = (targetChat?.messages || [])
         .filter((m) => !m.streaming && !m.error)
         .slice(-6)
         .map((m) => ({
@@ -268,10 +288,9 @@ export default function ChatPage() {
         }));
       const userMsg = { id: uid(), role: "user", content: trimmed };
       const asstId = uid();
-      addMessages(userMsg, asstId);
-      setLoading(true);
+      addMessages(targetChat.id, userMsg, asstId);
       const ctrl = new AbortController();
-      ctrlRef.current = ctrl;
+      controllerByChat.current[targetChat.id] = ctrl;
       let full = "",
         lastUpdate = 0;
       try {
@@ -285,7 +304,7 @@ export default function ChatPage() {
             message: trimmed,
             history,
             model,
-            chat_id: current?.dbId || null,
+            chat_id: targetChat?.dbId || null,
             enable_search: enableSearch,
           }),
           signal: ctrl.signal,
@@ -305,19 +324,22 @@ export default function ChatPage() {
           full += dec.decode(value, { stream: true }).replace(/\u0000/g, "");
           const now = Date.now();
           if (now - lastUpdate > 30) {
-            patchAssistant(asstId, { content: full, streaming: true });
+            patchAssistant(targetChat.id, asstId, {
+              content: full,
+              streaming: true,
+            });
             lastUpdate = now;
           }
         }
         full += dec.decode().replace(/\u0000/g, "");
-        patchAssistant(asstId, {
+        patchAssistant(targetChat.id, asstId, {
           content: full.trim() || "…",
           streaming: false,
         });
         if (!current?.dbId) refreshHistory();
       } catch (err) {
         if (err.name === "AbortError") {
-          patchAssistant(asstId, {
+          patchAssistant(targetChat.id, asstId, {
             content: full.trim() || "Stopped.",
             streaming: false,
             stopped: true,
@@ -328,21 +350,26 @@ export default function ChatPage() {
             logout();
             navigate("/login");
           }
-          patchAssistant(asstId, {
+          patchAssistant(targetChat.id, asstId, {
             content: `⚠️ Something went wrong. ${msg}`,
             streaming: false,
             error: true,
           });
         }
       } finally {
-        setLoading(false);
-        if (ctrlRef.current === ctrl) ctrlRef.current = null;
+        setChatLoading(targetChat.id, false);
+        if (controllerByChat.current[targetChat.id] === ctrl) {
+          delete controllerByChat.current[targetChat.id];
+        }
       }
     },
-    [activeId, loading, model, token],
+    [activeId, activeLoading, model, token],
   );
 
-  const stopGen = useCallback(() => ctrlRef.current?.abort(), []);
+  const stopGen = useCallback(() => {
+    if (!activeId) return;
+    controllerByChat.current[activeId]?.abort();
+  }, [activeId]);
   const regenerate = useCallback(
     async (msgId) => {
       const chat = chats.find((c) => c.id === activeId);
@@ -371,7 +398,7 @@ export default function ChatPage() {
       />
       <ChatWindow
         chat={activeChat}
-        loading={loading}
+        loading={activeLoading}
         onSend={sendMessage}
         onStop={stopGen}
         onUpload={handleUpload}

@@ -125,13 +125,20 @@ export default function MessageBubble({ message, onRegenerate, loading }) {
               </pre>
             ) : (
               <ReactMarkdown components={components}>
-                {message.content || (message.streaming ? "▍" : "")}
+                {message.content || (message.streaming ? "" : "")}
               </ReactMarkdown>
             )}
           </div>
         )}
 
-        {message.streaming && <span className="cursor-blink">▍</span>}
+        {message.streaming && (
+          <div className="bubble-streaming">
+            <span className="typing-bar typing-bar-small" />
+            <span className="typing-bar typing-bar-small" />
+            <span className="typing-bar typing-bar-small" />
+            <span className="typing-bar typing-bar-small" />
+          </div>
+        )}
 
         {/* Reaction badge */}
         {reaction && (

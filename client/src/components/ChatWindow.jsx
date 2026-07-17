@@ -17,11 +17,10 @@ function TypingIndicator() {
         <Sparkles size={15} color="#7c6ef5" />
       </div>
       <div className="bubble bubble-assistant" style={{ padding: "14px 18px" }}>
-        <div className="ai-thinking">
-          <div className="ai-thinking-dot" />
-          <div className="ai-thinking-dot" />
-          <div className="ai-thinking-dot" />
-          <span className="ai-thinking-text">Kryonix is thinking...</span>
+        <div className="typing-indicator typing-indicator-small">
+          <span className="typing-bar" />
+          <span className="typing-bar" />
+          <span className="typing-bar" />
         </div>
       </div>
     </div>

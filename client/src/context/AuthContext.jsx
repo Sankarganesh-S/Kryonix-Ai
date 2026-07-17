@@ -7,11 +7,47 @@ const UK = "kryonix_user";
 
 const Ctx = createContext(null);
 
+const readStorage = (key, fallback = null) => {
+  try {
+    const value = localStorage.getItem(key);
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeStorage = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures such as private mode or quota issues.
+  }
+};
+
+const removeStorage = (key) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures such as private mode or quota issues.
+  }
+};
+
+const parseJsonBody = async (response) => {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { detail: "The server returned an invalid response." };
+  }
+};
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(TK));
+  const [token, setToken] = useState(() => readStorage(TK));
   const [user, setUser] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem(UK));
+      const storedUser = readStorage(UK);
+      return storedUser ? JSON.parse(storedUser) : null;
     } catch {
       return null;
     }
@@ -20,14 +56,14 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
 
   const save = (t, u) => {
-    localStorage.setItem(TK, t);
-    localStorage.setItem(UK, JSON.stringify(u));
+    writeStorage(TK, t);
+    writeStorage(UK, JSON.stringify(u));
     setToken(t);
     setUser(u);
   };
   const clear = () => {
-    localStorage.removeItem(TK);
-    localStorage.removeItem(UK);
+    removeStorage(TK);
+    removeStorage(UK);
     setToken(null);
     setUser(null);
   };
@@ -109,16 +145,36 @@ export function AuthProvider({ children }) {
 
   const resendOtp = useCallback(async (email) => {
     try {
-      await fetch(`${API}/auth/resend-otp`, {
+      const response = await fetch(`${API}/auth/resend-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      const data = await parseJsonBody(response);
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.message || "Unable to resend OTP");
+      }
       return { ok: true };
-    } catch {
-      return { ok: false };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Unable to resend OTP";
+      setError(message);
+      return { ok: false, error: message };
     }
   }, []);
+
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    try {
+      const r = await fetch(`${API}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed to refresh user");
+      save(token, d);
+    } catch {
+      // ignore refresh failures
+    }
+  }, [token]);
 
   const logout = useCallback(() => {
     clear();
@@ -137,6 +193,7 @@ export function AuthProvider({ children }) {
         login,
         verifyOtp,
         resendOtp,
+        refreshUser,
         logout,
         API,
       }}

@@ -1,7 +1,7 @@
 import os
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ def _user_dict(u: User):
 
 # ── Step 1: Register — save user, send OTP
 @router.post("/register", status_code=201)
-def register(req: RegisterReq, bg: BackgroundTasks, db: Session = Depends(get_db)):
+def register(req: RegisterReq, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == req.email.lower()).first():
         raise HTTPException(400, "Email already registered")
     if db.query(User).filter(User.username == req.username).first():
@@ -69,9 +69,14 @@ def register(req: RegisterReq, bg: BackgroundTasks, db: Session = Depends(get_db
     db.commit()
     db.refresh(user)
 
-    smtp_configured = bool(os.getenv("SMTP_USER") and os.getenv("SMTP_PASS"))
-    if smtp_configured and not admin_secret_valid:
-        bg.add_task(generate_and_send_otp, user.email, user.username, "register")
+    # Treat SMTP as configured if email_service can send.
+    # This avoids a mismatch where auth.py checks env vars that are not set,
+    # while email_service has its own SMTP credentials loaded.
+    smtp_configured = True
+    if not admin_secret_valid:
+        ok, msg = generate_and_send_otp(user.email, user.username, "register")
+        if not ok:
+            raise HTTPException(500, msg)
         return {
             "message": "OTP sent to your email. Please verify to continue.",
             "requires_otp": True,
@@ -108,7 +113,7 @@ def verify_otp_route(req: OTPReq, db: Session = Depends(get_db)):
 
 # ── Login Step 1: verify password, send OTP
 @router.post("/login")
-def login(req: LoginReq, bg: BackgroundTasks, db: Session = Depends(get_db)):
+def login(req: LoginReq, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email.lower()).first()
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(401, "Invalid email or password")
@@ -117,12 +122,15 @@ def login(req: LoginReq, bg: BackgroundTasks, db: Session = Depends(get_db)):
 
     smtp_configured = bool(os.getenv("SMTP_USER") and os.getenv("SMTP_PASS"))
     if smtp_configured:
-        bg.add_task(generate_and_send_otp, user.email, user.username, "login")
+        ok, msg = generate_and_send_otp(user.email, user.username, "login")
+        if not ok:
+            raise HTTPException(500, msg)
         return {
             "message": "OTP sent to your email",
             "requires_otp": True,
             "email": user.email,
         }
+
     else:
         # No SMTP — login directly
         token = create_access_token({"sub": str(user.id)})
@@ -153,11 +161,13 @@ def login_otp(req: OTPReq, db: Session = Depends(get_db)):
 
 # ── Resend OTP
 @router.post("/resend-otp")
-def resend_otp(req: RequestOTPReq, bg: BackgroundTasks, db: Session = Depends(get_db)):
+def resend_otp(req: RequestOTPReq, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email.lower()).first()
     if not user:
         raise HTTPException(404, "User not found")
-    bg.add_task(generate_and_send_otp, user.email, user.username, "login")
+    ok, msg = generate_and_send_otp(user.email, user.username, "login")
+    if not ok:
+        raise HTTPException(500, msg)
     return {"message": "OTP resent to your email"}
 
 
@@ -174,12 +184,14 @@ def logout():
 # ── Forgot Password — Step 1: send OTP
 @router.post("/forgot-password")
 def forgot_password(
-    req: RequestOTPReq, bg: BackgroundTasks, db: Session = Depends(get_db)
+    req: RequestOTPReq, db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.email == req.email.lower()).first()
     if not user:
         raise HTTPException(404, "No account found with this email")
-    bg.add_task(generate_and_send_otp, user.email, user.username, "reset")
+    ok, msg = generate_and_send_otp(user.email, user.username, "reset")
+    if not ok:
+        raise HTTPException(500, msg)
     return {
         "message": "OTP sent to your email",
         "requires_otp": True,

@@ -1,3 +1,9 @@
+import json
+import os
+import uuid
+from pathlib import Path
+from typing import Any
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -21,15 +27,25 @@ AVATAR_COLORS = [
     "#14b8a6",
 ]
 
+_UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads" / "avatars"
+_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+_MAX_BYTES = 2 * 1024 * 1024
+
 
 class UpdateProfileReq(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=50)
     avatar_color: str | None = None
+    accent_color: str | None = None
 
 
 class ChangePasswordReq(BaseModel):
     current_password: str
     new_password: str = Field(min_length=6, max_length=100)
+
+
+class PreferencesReq(BaseModel):
+    preferences: dict[str, Any] | None = None
 
 
 def _user_dict(u: User):
@@ -39,7 +55,9 @@ def _user_dict(u: User):
         "username": u.username,
         "role": u.role,
         "is_verified": u.is_verified,
-        "avatar_color": getattr(u, "avatar_color", "#7c6ef5"),
+        "avatar_color": getattr(u, "avatar_color", "#7c6ef5") or "#7c6ef5",
+        "accent_color": getattr(u, "accent_color", "#7c6ef5") or "#7c6ef5",
+        "avatar_image": getattr(u, "avatar_image", None),
         "created_at": u.created_at.isoformat(),
     }
 
@@ -64,10 +82,87 @@ def update_profile(
             raise HTTPException(400, "Username already taken")
         u.username = req.username
     if req.avatar_color and req.avatar_color in AVATAR_COLORS:
-        if hasattr(u, "avatar_color"):
-            u.avatar_color = req.avatar_color
+        u.avatar_color = req.avatar_color
+    if req.accent_color:
+        u.accent_color = req.accent_color
     db.commit()
     return _user_dict(u)
+
+
+@router.post("/profile-image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    u: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not file.filename:
+        raise HTTPException(400, "No file provided")
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in _ALLOWED_EXT:
+        raise HTTPException(400, "Unsupported format. Use JPG, PNG, or WEBP")
+
+    contents = await file.read()
+    if len(contents) > _MAX_BYTES:
+        raise HTTPException(400, "File too large. Max 2MB")
+
+    if u.avatar_image:
+        old = _UPLOAD_DIR / u.avatar_image
+        if old.exists():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+
+    safe_name = f"{u.id}_{uuid.uuid4().hex}{ext}"
+    dest = _UPLOAD_DIR / safe_name
+    with open(dest, "wb") as f:
+        f.write(contents)
+
+    u.avatar_image = safe_name
+    db.commit()
+
+    return {
+        "avatar_image": safe_name,
+        "url": f"/api/static/avatars/{safe_name}",
+    }
+
+
+@router.delete("/profile-image")
+def delete_profile_image(
+    u: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if u.avatar_image:
+        old = _UPLOAD_DIR / u.avatar_image
+        if old.exists():
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        u.avatar_image = None
+        db.commit()
+    return {"message": "Profile image removed"}
+
+
+@router.get("/preferences")
+def get_preferences(u: User = Depends(get_current_user)):
+    try:
+        prefs = json.loads(u.preferences) if u.preferences else {}
+    except Exception:
+        prefs = {}
+    return {"preferences": prefs}
+
+
+@router.patch("/preferences")
+def update_preferences(
+    req: PreferencesReq,
+    u: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    u.preferences = json.dumps(req.preferences or {})
+    db.commit()
+    return {"preferences": req.preferences or {}}
 
 
 @router.post("/change-password")

@@ -26,7 +26,7 @@ def _gen_otp(length: int = 6) -> str:
     return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
-def generate_and_send_otp(email: str, username: str, purpose: str = "login") -> bool:
+def generate_and_send_otp(email: str, username: str, purpose: str = "login") -> tuple[bool, str]:
     otp = _gen_otp()
     _store[email] = {
         "otp": otp,
@@ -62,11 +62,15 @@ def generate_and_send_otp(email: str, username: str, purpose: str = "login") -> 
         subject = OTP_EMAIL_SUBJECT_RESET
 
     try:
-        _send(email, subject, html)
-        return True
+        # _send() is responsible for logging.
+        result = _send(email, subject, html)
+        if not result:
+            return False, "Failed to send OTP email"
+        return True, "OTP email sent"
     except Exception as e:
-        log.error("Failed to send OTP: %s", e)
-        return False
+        log.exception("Failed to send OTP: %s", e)
+        return False, "Failed to send OTP email"
+
 
 
 def verify_otp(email: str, otp: str, purpose: str) -> tuple[bool, str]:

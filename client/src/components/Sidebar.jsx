@@ -13,9 +13,12 @@ import {
   Download,
   Image,
 } from "lucide-react";
+import usePopup from "../Popup/usePopup";
+
 import { useAuth } from "../context/AuthContext";
 
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
+
 
 function Sidebar({
   chats,
@@ -30,7 +33,10 @@ function Sidebar({
   onPin,
   onExport,
 }) {
-  const { logout, token } = useAuth();
+  const { logout } = useAuth();
+  const popup = usePopup();
+
+
   const [search, setSearch] = useState("");
   const [hovered, setHovered] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
@@ -54,21 +60,21 @@ function Sidebar({
 
   const isMobile = window.innerWidth <= 768;
 
-  const handleExport = async (chatId) => {
-    setMenuOpen(null);
-    try {
-      const res = await fetch(`${API}/chat/history/${chatId}/export?fmt=txt`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `chat-${chatId}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {}
-  };
+  // const handleExport = async (chatId) => {
+  //   setMenuOpen(null);
+  //   try {
+  //     const res = await fetch(`${API}/chat/history/${chatId}/export?fmt=txt`, {
+  //       headers: { Authorization: `Bearer ${token}` },
+  //     });
+  //     const blob = await res.blob();
+  //     const url = URL.createObjectURL(blob);
+  //     const a = document.createElement("a");
+  //     a.href = url;
+  //     a.download = `chat-${chatId}.txt`;
+  //     a.click();
+  //     URL.revokeObjectURL(url);
+  //   } catch {}
+  // };
 
   const renderChat = (c) => (
     <div
@@ -86,40 +92,38 @@ function Sidebar({
       >
         <MessageSquare size={14} className="sidebar-item-ico" />
         <span className="sidebar-item-title">{c.title}</span>
-        {hovered === c.id && (
-          <div style={{ display: "flex", gap: 2 }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onPin && onPin(c.id);
-              }}
-              className="sidebar-delete"
-              title="Pin"
-            >
-              <Pin size={12} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleExport(c.id);
-              }}
-              className="sidebar-delete"
-              title="Export"
-            >
-              <Download size={12} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(c.id);
-              }}
-              className="sidebar-delete"
-              title="Delete"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }  }>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPin && onPin(c.id);
+            }}
+            className="sidebar-delete"
+            title="Pin"
+          >
+            <Pin size={12} />
+          </button>
+          {/* <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExport(c.id);
+            }}
+            className="sidebar-delete"
+            title="Export"
+          >
+            <Download size={12} />
+          </button> */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(c.id);
+            }}
+            className="sidebar-delete"
+            title="Delete"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -227,12 +231,26 @@ function Sidebar({
               </button>
             )}
             <button
-              onClick={handleLogout}
+              onClick={() =>
+                popup.confirm({
+                  variant: "confirm",
+                  danger: true,
+                  title: "Logout?",
+                  description: "You will be signed out of your account.",
+                  confirmText: "Logout",
+                  cancelText: "Cancel",
+                  onConfirm: () => {
+                    logout();
+                    navigate("/login");
+                  },
+                })
+              }
               className="sidebar-icon-btn logout"
               title="Logout"
             >
               <LogOut size={14} />
             </button>
+
           </div>
         </div>
       </aside>

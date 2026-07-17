@@ -13,6 +13,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+import { usePopup } from "../Popup";
+
+
+
 const API = import.meta.env.VITE_API_BASE_URL || "/api";
 
 function StatCard({ icon, label, value, sub, color }) {
@@ -31,8 +35,12 @@ function StatCard({ icon, label, value, sub, color }) {
 }
 
 export default function AdminPage() {
-  const { token, logout } = useAuth();
+  const { token } = useAuth();
+
   const navigate = useNavigate();
+  const { confirm: confirmPopup } = usePopup();
+
+
   const [tab, setTab] = useState("overview");
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -80,15 +88,28 @@ export default function AdminPage() {
   };
 
   const deleteUser = async (id) => {
-    if (!confirm("Delete this user and all their chats?")) return;
-    setBusyId(id);
-    await fetch(`${API}/admin/users/${id}`, {
-      method: "DELETE",
-      headers,
-    }).catch(() => {});
-    setUsers((prev) => prev.filter((u) => u.id !== id));
-    setBusyId(null);
-    loadStats();
+    if (busyId) return;
+
+    confirmPopup({
+      type: "confirm",
+      variant: "confirm",
+      danger: true,
+      title: "Delete user",
+      description: "Delete this user and all their chats?",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      loading: false,
+      onConfirm: async () => {
+        setBusyId(id);
+        await fetch(`${API}/admin/users/${id}`, {
+          method: "DELETE",
+          headers,
+        }).catch(() => {});
+        setUsers((prev) => prev.filter((u) => u.id !== id));
+        setBusyId(null);
+        loadStats();
+      },
+    });
   };
 
   const setRole = async (id, role) => {
